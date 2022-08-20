@@ -1,10 +1,10 @@
 Heptafon ADPCM Codec
 --------------------
 
-Yet another proof-of-concept audio codec.
+Yet another proof-of-concept audio codec. Now featuring an actual ASM implementation!
 
 The goals have stayed the same as the [previous](https://github.com/Wuerfel21/habane) [two](https://github.com/Wuerfel21/raven):
-- low decode complexity
+- low decode complexity (suitable for old scrimbly microcontrollers)
 - consume (less than) one 512 byte sector per 60Hz video frame
 - reasonable quality stereo music
 
