@@ -179,12 +179,11 @@ loop
               shl fastData,#2
               shl slowData,#1 wc
         if_z  rcr tempValue1,#32-4 
-        if_nz rcr tempValue1,#32-2
-        if_z  mov tempValue2,#0
-        if_nz mov tempValue2,fastData  
+        if_nz rcr tempValue1,#32-2   
+              mov tempValue2,fastData  
               shl fastData,#2  
               shl slowData,#1 wc
-        if_nz rcr tempValue2,#32-2
+              rcr tempValue2,#32-2
         if_z  muxc tempValue1,#16 
 
               ' X delta now in tempValue1, Y delta in tempValue2      
@@ -193,7 +192,7 @@ loop
               sumc musicOutX,tempValue1                     
               shl tempValue2,scaleY     
               cmps histY0,#0 wc        
-              sumc musicOutY,tempValue2              
+        if_nz sumc musicOutY,tempValue2              
               call #pushHistX
               call #pushHistY
               
