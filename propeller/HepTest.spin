@@ -6,6 +6,12 @@ CON
   spiClk    = 24
   spiDI     = 20
   spiCS     = 25
+
+  audioLeft = 11 
+  audioRight= 10
+
+  tvPin =  12
+  
   
 
 OBJ
@@ -21,8 +27,9 @@ byte buffer[1024]
 PUB main
               
 sector_ack := -1
-decoderStart(11,10)
-tv.start(12)
+decoderStart(audioLeft,audioRight)
+if tvPin => 0
+  tv.start(tvPin)
 tv.str(string("HEPTAFON!",13))
 fat.FATEngineStart(spiDO,spiClk,spiDI,spiCS,-1,-1,-1,-1,-1)  
 fat.mountPartition(0)
@@ -77,11 +84,7 @@ entry
               add cnt,sampleCycles
 
               mov sectorLeft,sectorLength 
-loop
-              'mov tempValue1,#1
-              'shl tempValue1,#26
-              'add tempValue2,tempValue1
-
+loop                                     
               cmp sectorLeft,initThreshold wc
         if_b  jmp #:doDecode 
               cmp sectorLeft,sectorLength wz
@@ -142,45 +145,47 @@ loop
   if_c_and_z  sub tempValue1,#2 
   if_c_and_z  add scaleX,tempValue1
 
-              ' Generate predictions
-              mov tempValue1,histX0  
-              mov tempValue2,histX1  
-              mov tempValue3,histX2
-              mov tempValue4,unitPar        
-              call #doPrediction
-              mov musicOutX,tempValue1
-                
-              mov tempValue1,histY0  
-              mov tempValue2,histY1  
-              mov tempValue3,histY2  
-              mov tempValue4,unitPar
-              shr tempValue4,#2         
-              call #doPrediction
-              mov musicOutY,tempValue1                                        
+              ' Generate predictions (unrolled because brrr)
+              mov musicOutX,histX0    
+              test unitPar,#%0001 wz         
+        if_nz add musicOutX,musicOutX ' LINEAR or WEIGHTED
+              test unitPar,#%0011 wc,wz
+        if_nz sumc musicOutX,histX1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
+              test unitPar,#%0010 wz 
+              mov tempValue2,musicOutX
+              add tempValue2,musicOutX
+  if_c_and_nz add musicOutX,tempValue2 ' QUADRATIC
+        if_nz add musicOutX,histX2 ' QUADRATIC or WEIGHTED 
+ if_nc_and_nz sar musicOutX,#2 ' WEIGHTED
+
+              mov musicOutY,histY0    
+              test unitPar,#%0100 wz         
+        if_nz add musicOutY,musicOutY ' LINEAR or WEIGHTED
+              test unitPar,#%1100 wc,wz
+        if_nz sumc musicOutY,histY1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
+              test unitPar,#%1000 wz 
+              mov tempValue2,musicOutY
+              add tempValue2,musicOutY
+  if_c_and_nz add musicOutY,tempValue2 ' QUADRATIC
+        if_nz add musicOutY,histY2 ' QUADRATIC or WEIGHTED 
+ if_nc_and_nz sar musicOutY,#2 ' WEIGHTED                                      
               
   
               test unitPar,#%10_0000 wz
         if_nz jmp #:subsampleMode
-
-              ' Extract 6 bits (TODO faster encoding)
-              mov tempValue1,slowData
-              shl tempValue1,#4
-              and tempValue1,#%110000
-              mov tempValue2,fastData
-              and tempValue2,#%1111
-              or tempValue1,tempValue2
-              shr slowData,#2          
-              shr fastData,#4                  
-              ' discriminate 6bit/3bit  
-              test unitPar,#%1_0000 wz
-        if_z  mov tempValue2,#0    
-        if_nz mov tempValue2,tempValue1 
-        if_z  shl tempValue1,#32-6
-        if_z  sar tempValue1,#32-6   
-        if_nz shl tempValue1,#32-3
-        if_nz sar tempValue1,#32-3
-        if_nz shl tempValue2,#32-6
-        if_nz sar tempValue2,#32-3
+        
+              test unitPar,#%1_0000 wz '  Z -> 6bit, NZ -> 3bit
+              mov tempValue1,fastData
+              shl fastData,#2
+              shl slowData,#1 wc
+        if_z  rcr tempValue1,#32-4 
+        if_nz rcr tempValue1,#32-2
+        if_z  mov tempValue2,#0
+        if_nz mov tempValue2,fastData  
+              shl fastData,#2  
+              shl slowData,#1 wc
+        if_nz rcr tempValue2,#32-2
+        if_z  muxc tempValue1,#16 
 
               ' X delta now in tempValue1, Y delta in tempValue2      
               shl tempValue1,scaleX
@@ -196,21 +201,16 @@ loop
 
 
 :subsampleMode                                                
-              
-              mov tempValue1,fastData
-              and tempValue1,#15  
-              shl tempValue1,#32-4
-              sar tempValue1,#32-4
-              shr fastData,#4   
-              mov tempValue2,slowData
-              and tempValue2,#15  
-              shl tempValue2,#32-4
-              sar tempValue2,#32-4
-              
+                                       
               test unitPar,#%1_0000 wz ' Z -> Y subsampled, NZ -> X subsampled
-        if_nz xor tempValue1,tempValue2  
-        if_nz xor tempValue2,tempValue1
-        if_nz xor tempValue1,tempValue2  
+        if_z  mov tempValue1,fastData  
+        if_nz mov tempValue2,fastData     
+        if_z  mov tempValue2,slowData 
+        if_nz mov tempValue1,slowData
+                                      
+              sar tempValue1,#32-4
+              sar tempValue2,#32-4
+                                          
               ' X delta now in tempValue1, Y delta in tempValue2    
               shl tempValue1,scaleX
               cmps histX0,#0 wc        
@@ -219,12 +219,13 @@ loop
               cmps histY0,#0 wc        
               sumc musicOutY,tempValue2
                                                                                                        
-              test sectorLeft,#1 wc ' set C for odd samples   
-        if_c  shr slowData,#4
+              test sectorLeft,#1 wc ' set C for odd samples    
+              shl fastData,#4 
+        if_c  shl slowData,#4
    if_c_or_z  call #pushHistX
    if_c_or_nz call #pushHistY     
- if_nc_and_z add musicOutY,histY0
- if_nc_and_z sar musicOutY,#1   
+ if_nc_and_z  add musicOutY,histY0
+ if_nc_and_z  sar musicOutY,#1   
  if_nc_and_nz add musicOutX,histX0
  if_nc_and_nz sar musicOutX,#1    
               
@@ -280,21 +281,6 @@ pushHistY
               mov histY0,musicOutY   
 pushHistY_ret
               ret
-
-doPrediction                             
-              'mov tempValue1,tempValue1    
-              test tempValue4,#%0001 wz         
-        if_nz add tempValue1,tempValue1 ' LINEAR or WEIGHTED
-              test tempValue4,#%0011 wc,wz
-        if_nz sumc tempValue1,tempValue2 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
-              test tempValue4,#%0010 wz 
-              mov tempValue2,tempValue1
-              add tempValue2,tempValue2
-  if_c_and_nz add tempValue1,tempValue2 ' QUADRATIC
-        if_nz add tempValue1,tempValue3 ' QUADRATIC or WEIGHTED 
- if_nc_and_nz sar tempValue1,#2 ' WEIGHTED
-doPrediction_ret
-              ret
               
 
 bit31         long |<31       
@@ -335,5 +321,7 @@ histX1        res 1 ' the one before that
 histX2        res 1 ' the one before that one
 histY0        res 1
 histY1        res 1
-histY2        res 1   
+histY2        res 1
+
+              fit 496
  

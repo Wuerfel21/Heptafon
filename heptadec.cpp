@@ -3,9 +3,9 @@ using namespace heptafon;
 
 static inline int32_pair
 decodeSubsampled(UnitData data,History &fastHist,History &slowHist,uint fastScale,uint slowScale,uint fastPred,uint slowPred,uint smp) {
-    int fdata = signx(data.fast>>(smp*4),4);
+    int fdata = signx(data.fast>>((60-smp*4)^32),4);
     int32_t fnew = fastHist.integrate_push(fdata<<fastScale,fastPred);
-    int sdata = signx(data.slow>>((smp>>1)*4),4);
+    int sdata = signx(data.slow>>(28-(smp>>1)*4),4);
     int32_t snew = slowHist.integrate(sdata<<slowScale,slowPred);
     if (smp&1) slowHist.push(snew);
     else snew = (snew+slowHist.samples[0])>>1;
@@ -13,8 +13,12 @@ decodeSubsampled(UnitData data,History &fastHist,History &slowHist,uint fastScal
 }
 
 static inline int get6bit(UnitData data,uint smp) {
-    // Todo: faster-to-decode storage (rotates and XOR)
-    return (((data.slow>>(smp*2))&3)<<4) + ((data.fast>>(smp*4))&15);
+    return (((data.slow>>(30-smp*2))&3)<<4) + ((data.fast>>((60-smp*4)^32))&15);
+}
+static inline std::pair<int,int> get3bit(UnitData data,uint smp) {
+    auto vl = (data.fast>>((60-smp*4)^32))&15;
+    auto vh = (data.slow>>(30-smp*2))&3;
+    return {(vl>>2)+((vh&2)?4:0),(vl&3)+((vh&1)?4:0)};
 }
 
 void heptafon::decodeSector(const PackedSector &sector, int16_pair *buffer) {    
@@ -37,9 +41,9 @@ void heptafon::decodeSector(const PackedSector &sector, int16_pair *buffer) {
             }
             switch (param.encMode) {
             case ENCMODE_3BIT: {
-                int sdata = get6bit(data,smp);
-                int32_t xnew = xhist.integrate_push(signx(sdata&7,3)<<xscale,param.xPred);
-                int32_t ynew = yhist.integrate_push(signx(sdata>>3,3)<<yscale,param.yPred);
+                auto [xdat,ydat] = get3bit(data,smp);
+                int32_t xnew = xhist.integrate_push(signx(xdat,3)<<xscale,param.xPred);
+                int32_t ynew = yhist.integrate_push(signx(ydat,3)<<yscale,param.yPred);
                 *buffer++ = clamp_output(xy_to_lr({xnew,ynew},sector.rotation));
             } break;
             case ENCMODE_6BIT: {

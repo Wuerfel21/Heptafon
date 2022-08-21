@@ -124,27 +124,28 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer) {
                     case ENCMODE_6BIT:
                         for (uint i=0;i<UNIT_SAMPLES;i++) {
                             int8_t v = best_xdat[i]&63;
-                            data.slow |= uint32_t(v>>4)<<(i*2);
-                            data.fast |= uint64_t(v&15)<<(i*4);
+                            data.slow |= uint32_t(v>>4)<<(30-i*2);
+                            data.fast |= uint64_t(v&15)<<((60-i*4)^32);
                         }
                         break;
                     case ENCMODE_3BIT:
                         for (uint i=0;i<UNIT_SAMPLES;i++) {
-                            int8_t v = (best_xdat[i]&7) + ((best_ydat[i]&7)<<3);
-                            data.slow |= uint32_t(v>>4)<<(i*2);
-                            data.fast |= uint64_t(v&15)<<(i*4);
+                            int8_t vl = ((best_xdat[i]&3)<<2) + ((best_ydat[i]&3));
+                            int8_t vh = ((best_xdat[i]&4)>>1) + ((best_ydat[i]&4)>>2);
+                            data.slow |= uint32_t(vh)<<(30-i*2);
+                            data.fast |= uint64_t(vl)<<((60-i*4)^32);
                         }
                         break;
                     case ENCMODE_YSUB:
                         for (uint i=0;i<UNIT_SAMPLES;i++) {
-                            data.fast |= uint64_t(best_xdat[i]&15)<<(i*4);
-                            if (!(i&1)) data.slow |= uint32_t(best_ydat[i]&15)<<(i*2);
+                            data.fast |= uint64_t(best_xdat[i]&15)<<((60-i*4)^32);
+                            if (!(i&1)) data.slow |= uint32_t(best_ydat[i]&15)<<(28-i*2);
                         }
                         break;
                     case ENCMODE_XSUB:
                         for (uint i=0;i<UNIT_SAMPLES;i++) {
-                            data.fast |= uint64_t(best_ydat[i]&15)<<(i*4);
-                            if (!(i&1)) data.slow |= uint32_t(best_xdat[i]&15)<<(i*2);
+                            data.fast |= uint64_t(best_ydat[i]&15)<<((60-i*4)^32);
+                            if (!(i&1)) data.slow |= uint32_t(best_xdat[i]&15)<<(28-i*2);
                         }
                         break;
                     default: __builtin_unreachable();
