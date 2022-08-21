@@ -5,7 +5,16 @@ using namespace heptafon;
 void Statistics::accumulateStats(const PackedSector &sector) {
     seccnt++;
     rots[sector.rotation]++;
+    int16_pair decBuffer[SECTOR_SAMPLES];
+    decodeSector(sector,decBuffer);
     for (int i=0;i<SECTOR_UNITS;i++) {
+        auto uptr = decBuffer+(PRED_SAMPLES+UNIT_SAMPLES*i);
+        for (int j=0;j<UNIT_SAMPLES;j++) {
+            if (uptr[j].first!=0 || uptr[j].second!=0) goto non_silent;
+        }
+        continue;
+        non_silent:
+        ucount++;
         auto par = sector.params[i];
         enc_by_rot[sector.rotation][par.encMode]++;
         xpred_by_enc[par.encMode][par.xPred]++;
@@ -27,7 +36,6 @@ static double percent(uint val,uint total) {
 }
 
 void Statistics::printStats() {
-    uint utotal = seccnt*SECTOR_UNITS;
 
     uint encsums[4] = {};
     for (uint i=0;i<4;i++) for (uint j=0;j<4;j++) encsums[j] += enc_by_rot[i][j];
@@ -38,7 +46,7 @@ void Statistics::printStats() {
     uint xrsums[4] = {};
     for (uint i=0;i<4;i++) for (uint j=0;j<4;j++) xrsums[j] += xride_by_enc[i][j];
 
-    printf("Statistics over %u sectors (%u coding units)...\n",seccnt,utotal);
+    printf("Statistics over %u sectors (%u non-silent coding units (%d total))...\n",seccnt,ucount,seccnt*SECTOR_UNITS);
     printf("\n");
     printf("Rotation modes:\n");
     printf("  MID  : %6.1f%% (%u)\n",percent(rots[ROTMODE_MID],seccnt),rots[ROTMODE_MID]);
@@ -49,100 +57,100 @@ void Statistics::printStats() {
     printf("Encoding modes by rotation:\n");
     printf("             MID    SIDE    LEFT   RIGHT    TOTAL\n");
     printf("  6BIT : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(enc_by_rot[ROTMODE_MID][ENCMODE_6BIT],utotal),
-        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_6BIT],utotal),
-        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_6BIT],utotal),
-        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_6BIT],utotal),
-        percent(encsums[ENCMODE_6BIT],utotal),encsums[ENCMODE_6BIT]);
+        percent(enc_by_rot[ROTMODE_MID][ENCMODE_6BIT],ucount),
+        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_6BIT],ucount),
+        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_6BIT],ucount),
+        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_6BIT],ucount),
+        percent(encsums[ENCMODE_6BIT],ucount),encsums[ENCMODE_6BIT]);
     printf("  3BIT : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(enc_by_rot[ROTMODE_MID][ENCMODE_3BIT],utotal),
-        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_3BIT],utotal),
-        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_3BIT],utotal),
-        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_3BIT],utotal),
-        percent(encsums[ENCMODE_3BIT],utotal),encsums[ENCMODE_3BIT]);
+        percent(enc_by_rot[ROTMODE_MID][ENCMODE_3BIT],ucount),
+        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_3BIT],ucount),
+        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_3BIT],ucount),
+        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_3BIT],ucount),
+        percent(encsums[ENCMODE_3BIT],ucount),encsums[ENCMODE_3BIT]);
     printf("  YSUB : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(enc_by_rot[ROTMODE_MID][ENCMODE_YSUB],utotal),
-        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_YSUB],utotal),
-        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_YSUB],utotal),
-        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_YSUB],utotal),
-        percent(encsums[ENCMODE_YSUB],utotal),encsums[ENCMODE_YSUB]);
+        percent(enc_by_rot[ROTMODE_MID][ENCMODE_YSUB],ucount),
+        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_YSUB],ucount),
+        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_YSUB],ucount),
+        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_YSUB],ucount),
+        percent(encsums[ENCMODE_YSUB],ucount),encsums[ENCMODE_YSUB]);
     printf("  XSUB : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(enc_by_rot[ROTMODE_MID][ENCMODE_XSUB],utotal),
-        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_XSUB],utotal),
-        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_XSUB],utotal),
-        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_XSUB],utotal),
-        percent(encsums[ENCMODE_XSUB],utotal),encsums[ENCMODE_XSUB]);
+        percent(enc_by_rot[ROTMODE_MID][ENCMODE_XSUB],ucount),
+        percent(enc_by_rot[ROTMODE_SIDE][ENCMODE_XSUB],ucount),
+        percent(enc_by_rot[ROTMODE_LEFT][ENCMODE_XSUB],ucount),
+        percent(enc_by_rot[ROTMODE_RIGHT][ENCMODE_XSUB],ucount),
+        percent(encsums[ENCMODE_XSUB],ucount),encsums[ENCMODE_XSUB]);
     printf("\n");
     printf("X Predictors by encoding:\n");
     printf("                 6BIT    3BIT    YSUB    XSUB   TOTAL\n");
     printf("       HOLD : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_HOLD],utotal),
-        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_HOLD],utotal),
-        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_HOLD],utotal),
-        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_HOLD],utotal),
-        percent(xpsums[PMODE_HOLD],utotal),xpsums[PMODE_HOLD]);
+        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_HOLD],ucount),
+        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_HOLD],ucount),
+        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_HOLD],ucount),
+        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_HOLD],ucount),
+        percent(xpsums[PMODE_HOLD],ucount),xpsums[PMODE_HOLD]);
     printf("     LINEAR : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_LINEAR],utotal),
-        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_LINEAR],utotal),
-        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_LINEAR],utotal),
-        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_LINEAR],utotal),
-        percent(xpsums[PMODE_LINEAR],utotal),xpsums[PMODE_LINEAR]);
+        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_LINEAR],ucount),
+        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_LINEAR],ucount),
+        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_LINEAR],ucount),
+        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_LINEAR],ucount),
+        percent(xpsums[PMODE_LINEAR],ucount),xpsums[PMODE_LINEAR]);
     printf("  QUADRATIC : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_QUADRATIC],utotal),
-        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_QUADRATIC],utotal),
-        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_QUADRATIC],utotal),
-        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_QUADRATIC],utotal),
-        percent(xpsums[PMODE_QUADRATIC],utotal),xpsums[PMODE_QUADRATIC]);
+        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_QUADRATIC],ucount),
+        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_QUADRATIC],ucount),
+        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_QUADRATIC],ucount),
+        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_QUADRATIC],ucount),
+        percent(xpsums[PMODE_QUADRATIC],ucount),xpsums[PMODE_QUADRATIC]);
     printf("   WEIGHTED : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_WEIGHTED],utotal),
-        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_WEIGHTED],utotal),
-        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_WEIGHTED],utotal),
-        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_WEIGHTED],utotal),
-        percent(xpsums[PMODE_WEIGHTED],utotal),xpsums[PMODE_WEIGHTED]);
+        percent(xpred_by_enc[ENCMODE_6BIT][PMODE_WEIGHTED],ucount),
+        percent(xpred_by_enc[ENCMODE_3BIT][PMODE_WEIGHTED],ucount),
+        percent(xpred_by_enc[ENCMODE_YSUB][PMODE_WEIGHTED],ucount),
+        percent(xpred_by_enc[ENCMODE_XSUB][PMODE_WEIGHTED],ucount),
+        percent(xpsums[PMODE_WEIGHTED],ucount),xpsums[PMODE_WEIGHTED]);
     printf("\n");
     printf("Y Predictors by encoding:\n");
     printf("                 6BIT    3BIT    YSUB    XSUB   TOTAL\n");
     printf("       HOLD : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_HOLD],utotal),
-        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_HOLD],utotal),
-        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_HOLD],utotal),
-        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_HOLD],utotal),
-        percent(ypsums[PMODE_HOLD],utotal),ypsums[PMODE_HOLD]);
+        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_HOLD],ucount),
+        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_HOLD],ucount),
+        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_HOLD],ucount),
+        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_HOLD],ucount),
+        percent(ypsums[PMODE_HOLD],ucount),ypsums[PMODE_HOLD]);
     printf("     LINEAR : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_LINEAR],utotal),
-        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_LINEAR],utotal),
-        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_LINEAR],utotal),
-        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_LINEAR],utotal),
-        percent(ypsums[PMODE_LINEAR],utotal),ypsums[PMODE_LINEAR]);
+        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_LINEAR],ucount),
+        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_LINEAR],ucount),
+        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_LINEAR],ucount),
+        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_LINEAR],ucount),
+        percent(ypsums[PMODE_LINEAR],ucount),ypsums[PMODE_LINEAR]);
     printf("  QUADRATIC : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_QUADRATIC],utotal),
-        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_QUADRATIC],utotal),
-        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_QUADRATIC],utotal),
-        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_QUADRATIC],utotal),
-        percent(ypsums[PMODE_QUADRATIC],utotal),ypsums[PMODE_QUADRATIC]);
+        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_QUADRATIC],ucount),
+        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_QUADRATIC],ucount),
+        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_QUADRATIC],ucount),
+        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_QUADRATIC],ucount),
+        percent(ypsums[PMODE_QUADRATIC],ucount),ypsums[PMODE_QUADRATIC]);
     printf("   WEIGHTED : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",
-        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_WEIGHTED],utotal),
-        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_WEIGHTED],utotal),
-        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_WEIGHTED],utotal),
-        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_WEIGHTED],utotal),
-        percent(ypsums[PMODE_WEIGHTED],utotal),ypsums[PMODE_WEIGHTED]);
+        percent(ypred_by_enc[ENCMODE_6BIT][PMODE_WEIGHTED],ucount),
+        percent(ypred_by_enc[ENCMODE_3BIT][PMODE_WEIGHTED],ucount),
+        percent(ypred_by_enc[ENCMODE_YSUB][PMODE_WEIGHTED],ucount),
+        percent(ypred_by_enc[ENCMODE_XSUB][PMODE_WEIGHTED],ucount),
+        percent(ypsums[PMODE_WEIGHTED],ucount),ypsums[PMODE_WEIGHTED]);
     printf("\n");
     printf("X Ride by encoding(?) :\n");
     printf("          6BIT    3BIT    YSUB    XSUB   TOTAL\n");
     for (int i=0;i<4;i++) {
         printf("  %+d : %6.1f%% %6.1f%% %6.1f%% %6.1f%%  %6.1f%% (%u)\n",i-2,
-            percent(xride_by_enc[ENCMODE_6BIT][i],utotal),
-            percent(xride_by_enc[ENCMODE_3BIT][i],utotal),
-            percent(xride_by_enc[ENCMODE_YSUB][i],utotal),
-            percent(xride_by_enc[ENCMODE_XSUB][i],utotal),
-            percent(xrsums[i],utotal),xrsums[i]);
+            percent(xride_by_enc[ENCMODE_6BIT][i],ucount),
+            percent(xride_by_enc[ENCMODE_3BIT][i],ucount),
+            percent(xride_by_enc[ENCMODE_YSUB][i],ucount),
+            percent(xride_by_enc[ENCMODE_XSUB][i],ucount),
+            percent(xrsums[i],ucount),xrsums[i]);
     }
     printf("\n");
     printf("Scale values :\n");
     printf("          XMSB    YMSB    XLSB    YLSB\n");
     for (int i=0;i<24;i++) {
         printf("  %2d : %6.1f%% %6.1f%% %6.1f%% %6.1f%%\n",i,
-            percent(xscale_msb[i],utotal),percent(yscale_msb[i],utotal),percent(xscale_lsb[i],utotal),percent(yscale_lsb[i],utotal));
+            percent(xscale_msb[i],ucount),percent(yscale_msb[i],ucount),percent(xscale_lsb[i],ucount),percent(yscale_lsb[i],ucount));
     }
 
 

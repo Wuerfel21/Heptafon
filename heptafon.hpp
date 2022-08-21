@@ -190,7 +190,7 @@ class Statistics {
     uint yscale_lsb[24];
     uint xscale_msb[24];
     uint yscale_msb[24];
-    uint seccnt;
+    uint seccnt,ucount;
 public:
     void accumulateStats(const PackedSector &sector);
     void printStats();
