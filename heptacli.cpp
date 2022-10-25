@@ -8,10 +8,15 @@ using namespace heptafon;
 
 static void printUsage() {
     std::cout << "Usage:" << std::endl;
-    std::cout << "  encode [in.raw] [out.hep]" << std::endl;
+    std::cout << "  encode [in.raw] [out.hep] (-noise-shape 0..255)" << std::endl;
     std::cout << "  decode [in.hep] [out.raw]" << std::endl;
     std::cout << "  stats [in.hep]" << std::endl;
     std::cout << "  rawdiff [a.raw] [b.raw]" << std::endl;
+}
+
+static void usageAndExit() {
+    printUsage();
+    exit(-1);
 }
 
 #define DIFF_BLOCK_SIZE 2048
@@ -45,16 +50,50 @@ int main(int argc, char **argv) {
             fwrite(buffer,SECTOR_SAMPLES*sizeof(int16_pair),1,outfile);
         }
     } else if (!strcmp(argv[1],"encode")) {
-        if (argc != 4) {
+        EncoderSettings settings = {.ns_strength = 180};
+
+        uint files_got = 0;
+        constexpr uint files_need = 2;
+        char *fnames[files_need];
+        for (int i=2;i<argc;i++) {
+            if(!strcmp(argv[i],"-encmask")) {
+                if (++i >= argc) usageAndExit();
+                uint val = atoi(argv[i]);
+                if (val >= 15) usageAndExit();
+                settings.encmask = val;
+            } else if(!strcmp(argv[i],"-predmask")) {
+                if (++i >= argc) usageAndExit();
+                uint val = atoi(argv[i]);
+                if (val >= 15) usageAndExit();
+                settings.predmask = val;
+            } else if(!strcmp(argv[i],"-rotmask")) {
+                if (++i >= argc) usageAndExit();
+                uint val = atoi(argv[i]);
+                if (val >= 15) usageAndExit();
+                settings.rotmask = val;
+            } else if(!strcmp(argv[i],"-noise-shape")) {
+                if (++i >= argc) usageAndExit();
+                uint val = atoi(argv[i]);
+                if (val >= 256) usageAndExit();
+                settings.ns_strength = val;
+            } else if (argv[i][0] == '-') {
+                usageAndExit();
+            } else {
+                if (files_got >= files_need) usageAndExit();
+                fnames[files_got++] = argv[i];
+            }
+        }
+
+        if (files_got != files_need) {
             printUsage();
             return -1;
         }
-        FILE *infile = fopen(argv[2],"rb");
+        FILE *infile = fopen(fnames[0],"rb");
         if (!infile) {
             std::cout << "Input open error: " << strerror(errno) << std::endl;
             return -1;
         }
-        FILE *outfile = fopen(argv[3],"wb");
+        FILE *outfile = fopen(fnames[1],"wb");
         if (!outfile) {
             std::cout << "Output open error: " << strerror(errno) << std::endl;
             return -1;
@@ -70,7 +109,7 @@ int main(int argc, char **argv) {
             #pragma omp parallel for
             for (uint i=0;i<ENC_JOB_SIZE;i++) {
                 if (i>=gotsectors) continue;
-                encodeSector(sectors[i],buffer+(i*SECTOR_SAMPLES));
+                encodeSector(sectors[i],buffer+(i*SECTOR_SAMPLES),settings);
             }
             fwrite(sectors,sizeof(PackedSector),gotsectors,outfile);
         }

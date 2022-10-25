@@ -96,12 +96,19 @@ struct History {
     }
 };
 
+struct EncoderSettings {
+    uint8_t ns_strength; // noise shaping strength 0..255
+    uint8_t encmask; // 4 bits. Do not set 15
+    uint8_t predmask; // 4 bits. Do not set 15;
+    uint8_t rotmask; // 4 bits. Do not set 15;
+};
+
 
 // decode functions (heptadec.cpp)
 void decodeSector(const PackedSector &sector, int16_pair *buffer);
 
 // encode functions (heptaenc.cpp)
-void encodeSector(PackedSector &sector, const int16_pair *buffer);
+void encodeSector(PackedSector &sector, const int16_pair *buffer, const EncoderSettings &settings);
 
 // inline functions
 

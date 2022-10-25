@@ -19,19 +19,21 @@ static inline std::tuple<int8_t,uint64_t> quantizeSubsample(History &hist, uint 
     return {qdata,err2 + compError(got1,target1)};
 }
 
-static inline uint64_t quantizeMulti(History &hist, uint pmode, uint encbits, bool subsample, int scale, const int16_t *samples, int8_t *out, uint count) {
+static inline uint64_t quantizeMulti(History &hist, uint pmode, uint encbits, bool subsample, int scale, uint8_t nsStrength, const int16_t *samples, int8_t *out, uint count) {
     // Note: samples points into interleaved array
     uint64_t erracc = 0;
     if (subsample) {
         for (uint i=0;i<count;i+=2) {
-            auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[i*2],samples[(i+1)*2]);
+            int32_t noise_shape = -(samples[(i-1)*2] - hist.samples[0])*nsStrength/256*nsStrength/256;
+            auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[i*2]+noise_shape,samples[(i+1)*2]+noise_shape);
             erracc += err;
             out[i] = qdata;
             out[i+1] = 0;
         }
     } else {
         for (uint i=0;i<count;i++) {
-            auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[i*2]);
+            int32_t noise_shape = -(samples[(i-1)*2] - hist.samples[0])*nsStrength/256;
+            auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[i*2]+noise_shape);
             erracc += err;
             out[i] = qdata;
         }
@@ -41,12 +43,12 @@ static inline uint64_t quantizeMulti(History &hist, uint pmode, uint encbits, bo
 
 
 
-void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer) {
+void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const EncoderSettings &settings) {
 
     int16_pair xyData[SECTOR_SAMPLES],compareBuffer[SECTOR_SAMPLES];
     uint64_t best_rot_err = UINT64_MAX;
     for (uint rot=0;rot<=3;rot++) {
-        //if (rot != ROTMODE_LEFT) continue; // DEBUG
+        if ((settings.rotmask>>rot)&1) continue;
         PackedSector workSector = {.rotation=uint8_t(rot)};
         // Generate XY-encoded samples
         for (uint i=0;i<SECTOR_SAMPLES;i++) xyData[i] = lr_to_xy(buffer[i],rot);
@@ -62,7 +64,7 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer) {
             uint64_t best_enc_err = UINT64_MAX;
             History xhist_best,yhist_best;
             for (uint enc=0;enc<=3;enc++) {
-                //if (enc!=ENCMODE_3BIT) continue; // DEBUG
+                if ((settings.encmask>>enc)&1) continue;
                 uint64_t best_x_err = UINT64_MAX, best_y_err = UINT64_MAX;
                 uint best_xpsr = 0,best_yps = 0;
                 std::array<int8_t,UNIT_SAMPLES> best_xdat = {},best_ydat = {};
@@ -74,12 +76,12 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer) {
                     History workhist = xhist;
                     std::array<int8_t,UNIT_SAMPLES> workdat;
                     uint pred = xpsr&3;
-                    //if (pred != PMODE_HOLD) continue; // DEBUG
+                    if ((settings.predmask>>pred)&1) continue;
                     int scale1 = (xpsr>>4);
                     int scale2 = scale1+((xpsr>>2)&3)-2;
                     if (scale2 < 0 || scale2 > 15) continue;
-                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,&unitbuf->first,&workdat[0],8);
-                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,&unitbuf->first+16,&workdat[8],8);
+                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,settings.ns_strength,&unitbuf->first,&workdat[0],8);
+                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,settings.ns_strength,&unitbuf->first+16,&workdat[8],8);
                     if (err < best_x_err) {
                         best_x_err = err;
                         best_xpsr = xpsr;
@@ -95,8 +97,8 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer) {
                     int scale = yps>>2;
                     if (enc == ENCMODE_6BIT && scale != 0) break;
                     uint pred = yps&3;
-                    //if (pred != PMODE_HOLD) continue; // DEBUG
-                    uint64_t err = quantizeMulti(workhist,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,&unitbuf->second,&workdat[0],16);
+                    if ((settings.predmask>>pred)&1) continue;
+                    uint64_t err = quantizeMulti(workhist,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,settings.ns_strength,&unitbuf->second,&workdat[0],16);
                     if (err < best_y_err) {
                         best_y_err = err;
                         best_yps = yps;
