@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
             fwrite(buffer,SECTOR_SAMPLES*sizeof(int16_pair),1,outfile);
         }
     } else if (!strcmp(argv[1],"encode")) {
-        EncoderSettings settings = {.ns_strength = 180};
+        EncoderSettings settings = {};
 
         uint files_got = 0;
         constexpr uint files_need = 2;
