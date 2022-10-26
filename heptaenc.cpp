@@ -1,6 +1,8 @@
 #include "heptafon.hpp"
 using namespace heptafon;
 
+static constexpr uint8_t scaleTryOrder[16] = {0,7,8,6,9,5,10,4,11,3,12,2,13,1,14,15};
+
 static inline std::tuple<int8_t,uint64_t,int32_t> quantizeSample(History &hist, uint pmode, int scale, uint encbits, int32_t target) {
     int32_t predict = hist.predict(pmode);
     int32_t diff = target-predict;
@@ -19,37 +21,48 @@ static inline std::tuple<int8_t,uint64_t> quantizeSubsample(History &hist, uint 
     return {qdata,err2 + compError(got1,target1)};
 }
 
-static inline uint64_t quantizeMulti(History &hist, uint pmode, uint encbits, bool subsample, int scale, uint8_t nsStrength, const int16_t *samples, int8_t *out, uint count) {
+static inline uint64_t quantizePair(History &hist, const EncoderSettings &settings, uint pmode, uint encbits, bool subsample, int scale, const int16_t *samples, int8_t *out) {
     // Note: samples points into interleaved array
-    uint64_t erracc = 0;
     if (subsample) {
-        for (uint i=0;i<count;i+=2) {
-            int32_t noise_shape = -(samples[(i-1)*2] - hist.samples[0])*nsStrength/256*nsStrength/256;
-            auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[i*2]+noise_shape,samples[(i+1)*2]+noise_shape);
-            erracc += err;
-            out[i] = qdata;
-            out[i+1] = 0;
-        }
+        int32_t noise_shape = -(samples[-2] - hist.samples[0])*settings.ns_strength/256*settings.ns_strength/256;
+        auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[0]+noise_shape,samples[2]+noise_shape);
+        out[0] = qdata;
+        out[1] = 0;
+        return err;
     } else {
-        for (uint i=0;i<count;i++) {
-            int32_t noise_shape = -(samples[(i-1)*2] - hist.samples[0])*nsStrength/256;
-            auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[i*2]+noise_shape);
+        uint64_t erracc = 0;
+        {
+            int32_t noise_shape = -(samples[-2] - hist.samples[0])*settings.ns_strength/256;
+            auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[0]+noise_shape);
             erracc += err;
-            out[i] = qdata;
+            out[0] = qdata;
         }
+        {
+            int32_t noise_shape = -(samples[0] - hist.samples[0])*settings.ns_strength/256;
+            auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[2]+noise_shape);
+            erracc += err;
+            out[1] = qdata;
+        }
+        return erracc;
     }
-    return erracc;
 }
 
 
 
 void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const EncoderSettings &settings) {
 
-    int16_pair xyData[SECTOR_SAMPLES],compareBuffer[SECTOR_SAMPLES];
-    uint64_t best_rot_err = UINT64_MAX;
+    PackedSector workSectors[4] = {};
+    uint64_t rot_errs[4];
+
+    #pragma omp parallel for
     for (uint rot=0;rot<=3;rot++) {
-        if ((settings.rotmask>>rot)&1) continue;
-        PackedSector workSector = {.rotation=uint8_t(rot)};
+        auto &workSector = workSectors[rot];
+        workSector.rotation = rot;
+        if ((settings.rotmask>>rot)&1) {
+            rot_errs[rot] = UINT64_MAX;
+            continue;
+        }
+        int16_pair xyData[SECTOR_SAMPLES],compareBuffer[SECTOR_SAMPLES];
         // Generate XY-encoded samples
         for (uint i=0;i<SECTOR_SAMPLES;i++) xyData[i] = lr_to_xy(buffer[i],rot);
         
@@ -70,6 +83,32 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const
                 std::array<int8_t,UNIT_SAMPLES> best_xdat = {},best_ydat = {};
                 History xhist_best_inner,yhist_best_inner;
 
+                // Find best pred/scale for Y (64 combos)
+                // Do this one first because it's faster to prune out a bad encmode this way
+                for (uint yps=0;yps<64;yps++) {
+                    uint64_t err = 0;
+                    History workhist = yhist;
+                    std::array<int8_t,UNIT_SAMPLES> workdat;
+                    int scale = scaleTryOrder[yps>>2];
+                    if (enc == ENCMODE_6BIT && scale != 0) break;
+                    uint pred = yps&3;
+                    if ((settings.predmask>>pred)&1) continue;
+
+                    for (uint i=0;i<16;i+=2) {
+                        err += quantizePair(workhist,settings,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,&unitbuf->second+i*2,&workdat[i]);
+                        if (err >= best_y_err) goto exceed_y_err; // Continue outer
+                    }
+
+                    best_y_err = err;
+                    best_yps = yps;
+                    best_ydat = workdat;
+                    yhist_best_inner = workhist;
+
+                    exceed_y_err:;
+                }
+
+                if (best_y_err >= best_enc_err) continue; // Early out for poor encmode
+
                 // Find best pred/scale/ride for X (256 combos)
                 for (uint xpsr=0;xpsr<256;xpsr++) {
                     uint64_t err = 0;
@@ -77,34 +116,25 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const
                     std::array<int8_t,UNIT_SAMPLES> workdat;
                     uint pred = xpsr&3;
                     if ((settings.predmask>>pred)&1) continue;
-                    int scale1 = (xpsr>>4);
+                    int scale1 = scaleTryOrder[xpsr>>4];
                     int scale2 = scale1+((xpsr>>2)&3)-2;
                     if (scale2 < 0 || scale2 > 15) continue;
-                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,settings.ns_strength,&unitbuf->first,&workdat[0],8);
-                    err += quantizeMulti(workhist,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,settings.ns_strength,&unitbuf->first+16,&workdat[8],8);
-                    if (err < best_x_err) {
-                        best_x_err = err;
-                        best_xpsr = xpsr;
-                        best_xdat = workdat;
-                        xhist_best_inner = workhist;
-                    }
-                }
 
-                // Find best pred/scale for Y (64 combos)
-                for (uint yps=0;yps<64;yps++) {
-                    History workhist = yhist;
-                    std::array<int8_t,UNIT_SAMPLES> workdat;
-                    int scale = yps>>2;
-                    if (enc == ENCMODE_6BIT && scale != 0) break;
-                    uint pred = yps&3;
-                    if ((settings.predmask>>pred)&1) continue;
-                    uint64_t err = quantizeMulti(workhist,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,settings.ns_strength,&unitbuf->second,&workdat[0],16);
-                    if (err < best_y_err) {
-                        best_y_err = err;
-                        best_yps = yps;
-                        best_ydat = workdat;
-                        yhist_best_inner = workhist;
+                    for (uint i=0;i<8;i+=2) {
+                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,&unitbuf->first+i*2,&workdat[i]);
+                        if (err >= best_x_err) goto exceed_x_err; // Continue outer
                     }
+                    for (uint i=8;i<16;i+=2) {
+                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,&unitbuf->first+i*2,&workdat[i]);
+                        if (err >= best_x_err) goto exceed_x_err; // Continue outer
+                    }
+
+                    best_x_err = err;
+                    best_xpsr = xpsr;
+                    best_xdat = workdat;
+                    xhist_best_inner = workhist;
+
+                    exceed_x_err:;
                 }
 
                 if (best_x_err + best_y_err < best_enc_err) {
@@ -113,8 +143,8 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const
                     yhist_best = yhist_best_inner;
                     // Pack data into sector struct
                     workSector.params[unit] = {
-                        .xScale=uint16_t(best_xpsr>>4),
-                        .yScale=uint16_t(best_yps>>2),
+                        .xScale=uint16_t(scaleTryOrder[best_xpsr>>4]),
+                        .yScale=uint16_t(scaleTryOrder[best_yps>>2]),
                         .xPred=uint16_t(best_xpsr&3),
                         .yPred=uint16_t(best_yps&3),
                         .encMode=uint16_t(enc),
@@ -159,13 +189,10 @@ void heptafon::encodeSector(PackedSector &sector, const int16_pair *buffer,const
         }
 
         decodeSector(workSector,compareBuffer);
-        uint64_t this_rot_err = 0;
-        for (uint i=0;i<SECTOR_SAMPLES;i++) this_rot_err += compErrorLR(compareBuffer[i],buffer[i]);
-        if (this_rot_err < best_rot_err) {
-            best_rot_err = this_rot_err;
-            sector = workSector;
-            if (best_rot_err == 0) break;
-        }
-
+        rot_errs[rot] = 0;
+        for (uint i=0;i<SECTOR_SAMPLES;i++) rot_errs[rot] += compErrorLR(compareBuffer[i],buffer[i]);
     }
+    uint bestRot = 0;
+    for (uint i=0;i<4;i++) if (rot_errs[i] < rot_errs[bestRot]) bestRot = i;
+    sector = workSectors[bestRot];
 }

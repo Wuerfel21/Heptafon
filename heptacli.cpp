@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
             auto gotsectors = (gotsmp+SECTOR_SAMPLES-1)/SECTOR_SAMPLES;
             auto zerofill = gotsectors*SECTOR_SAMPLES - gotsmp;
             if (zerofill) memset(buffer+(gotsectors*SECTOR_SAMPLES-zerofill),0,zerofill*sizeof(int16_pair));
-            #pragma omp parallel for
+            
             for (uint i=0;i<ENC_JOB_SIZE;i++) {
                 if (i>=gotsectors) continue;
                 encodeSector(sectors[i],buffer+(i*SECTOR_SAMPLES),settings);
