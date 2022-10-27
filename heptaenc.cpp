@@ -6,20 +6,33 @@ static constexpr uint8_t scaleTryOrder[16] = {0,7,8,6,9,5,10,4,11,3,12,2,13,1,14
 // Extended history class with noise-shaping functions
 struct EncHistory : public History {
     int32_t error;
+    int32_t prev_shape;
 
-    inline int32_t noiseshape_step(int16_t decorr_weight,int32_t sample) {
-        // Also borrowed from adpcm-xq
+    inline int32_pair noiseshape_step(int16_t decorr_weight,int32_t sample,const EncoderSettings &settings) {
+        // Algorithm borrowed from adpcm-xq
+        // Probably should be adapted for subsample modes, but idk seems fine
+
         error += samples[0]; // Compute actual error value from previous sample
-        int32_t shaping_weight = decorr_weight < 512 ? 1024 : 1536 - decorr_weight;
-        int32_t shape_value = -((shaping_weight * error)>>10);
+        int32_t shape_value;
+        if (settings.dynamic_shaping) {
+            int32_t shaping_weight = (decorr_weight < 256) ? 1024 : 1536 - decorr_weight*2;
+            shape_value = -((((shaping_weight * error)>>10)*settings.ns_strength)/256);
 
-        if (shaping_weight < 0 && shape_value) {
-            if (shape_value == error) shape_value += (shape_value<0 ? +1 : -1); // ???
-            error = -sample;
+            if (shaping_weight < 0 && shape_value) {
+                // Shape noise downwards
+                if (shape_value == error) shape_value += (shape_value<0) ? +1 : -1; // ???
+                error = -sample;
+            } else {
+                // Shape noise upwards
+                error = -(sample+shape_value);
+            }
         } else {
-            error = -(sample+shape_value);
+            shape_value = (error*settings.ns_strength)/256;
+            error = -sample;
         }
-        return sample+shape_value;
+        auto prev_val = prev_shape;
+        prev_shape = shape_value;
+        return {shape_value,(prev_val+shape_value)/2};
     };
 };
 
@@ -41,24 +54,27 @@ static inline std::tuple<int8_t,uint64_t> quantizeSubsample(History &hist, uint 
     return {qdata,err2 + compError(got1,target1)};
 }
 
-static inline uint64_t quantizePair(EncHistory &hist, const EncoderSettings &settings, uint pmode, uint encbits, bool subsample, int scale, const int16_t *samples, int8_t *out) {
+static inline uint64_t quantizePair(EncHistory &hist, const EncoderSettings &settings, uint pmode, uint encbits, bool subsample, int scale, const int16_t *decorr, const int16_t *samples, int8_t *out) {
     // Note: samples points into array
     if (subsample) {
-        int32_t noise_shape = -(samples[-1] - hist.samples[0])*settings.ns_strength/256*settings.ns_strength/256;
-        auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[0]+noise_shape,samples[1]+noise_shape);
+        //int32_t noise_shape = -(samples[-1] - hist.samples[0])*settings.ns_strength/256*settings.ns_strength/256;
+        auto [shape_full,shape_half] = hist.noiseshape_step(decorr[1]/2,samples[1],settings);
+        auto [qdata,err] = quantizeSubsample(hist,pmode,scale,encbits,samples[0]+shape_half,samples[1]+shape_full);
         out[0] = qdata;
         out[1] = 0;
         return err;
     } else {
         uint64_t erracc = 0;
         {
-            int32_t noise_shape = -(samples[-1] - hist.samples[0])*settings.ns_strength/256;
+            //int32_t noise_shape = -(samples[-1] - hist.samples[0])*settings.ns_strength/256;
+            auto [noise_shape,_half] = hist.noiseshape_step(decorr[0],samples[0],settings);
             auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[0]+noise_shape);
             erracc += err;
             out[0] = qdata;
         }
         {
-            int32_t noise_shape = -(samples[0] - hist.samples[0])*settings.ns_strength/256;
+            //int32_t noise_shape = -(samples[0] - hist.samples[0])*settings.ns_strength/256;
+            auto [noise_shape,_half] = hist.noiseshape_step(decorr[1],samples[1],settings);
             auto [qdata,err,_] = quantizeSample(hist,pmode,scale,encbits,samples[1]+noise_shape);
             erracc += err;
             out[1] = qdata;
@@ -88,10 +104,8 @@ void heptafon::EncoderState::encodeSector(PackedSector &sector, const int16_pair
             if (settings.dynamic_shaping) {
                 int32_t pred = (3*prev0 - prev1)>>1;
                 int32_t temp = smp - (((prev_decorr_weight[rot]*pred)+512)>>10);
-                if (pred && temp) prev_decorr_weight[rot] += (((pred^temp)>>29)&4)-2; // either +2 or -2
-                mslrDecorr[rot][i] = (prev_decorr_weight[rot]*settings.ns_strength)/256;
-            } else {
-                mslrDecorr[rot][i] = -settings.ns_strength*2; // Constant low-pass;
+                if (pred && temp) prev_decorr_weight[rot] -= (((pred^temp)>>29)&4)-2; // either +2 or -2
+                mslrDecorr[rot][i] = prev_decorr_weight[rot];
             }
             prev1 = prev0;
             prev0 = smp;
@@ -114,17 +128,26 @@ void heptafon::EncoderState::encodeSector(PackedSector &sector, const int16_pair
         // Noise shaping requires previous block's last encoded sample
         auto oldhist_tmp = lr_to_xy(xy_to_lr(prev_histsmp,prevblock_rotation),rot);
         xhist.samples[0] = oldhist_tmp.first;
-        yhist.samples[0] = oldhist_tmp.first;
+        yhist.samples[0] = oldhist_tmp.second;
+        auto olderr_tmp = lr_to_xy(xy_to_lr(prev_error,prevblock_rotation),rot);
+        xhist.error = olderr_tmp.first;
+        yhist.error = olderr_tmp.second;
         // Set up prediction
         for (uint i=0;i<PRED_SAMPLES;i++) {
-            int16_pair smp = {mslrData[rot][i],mslrData[rot^1][i]};
+            int32_t x = mslrData[rot][i];
+            int32_t y = mslrData[rot^1][i];
+            auto [x_shape,_xhalf] = xhist.noiseshape_step(mslrDecorr[rot][i],x,settings);
+            auto [y_shape,_yhalf] = yhist.noiseshape_step(mslrDecorr[rot^1][i],y,settings);
+            int16_pair smp = clamp_output({x+x_shape,y+y_shape});
             workSector.pred_init[i] = smp;
             xhist.push(smp.first);
             yhist.push(smp.second);
         }
+        const int16_t *unitbuf_x = mslrData[rot] + PRED_SAMPLES;
+        const int16_t *unitbuf_y = mslrData[rot^1] + PRED_SAMPLES;
+        const int16_t *unitdecorr_x = mslrDecorr[rot] + PRED_SAMPLES;
+        const int16_t *unitdecorr_y = mslrDecorr[rot^1] + PRED_SAMPLES;
         for (uint unit=0;unit<SECTOR_UNITS;unit++) {
-            const int16_t *unitbuf_x = mslrData[rot] + (unit*UNIT_SAMPLES+PRED_SAMPLES);
-            const int16_t *unitbuf_y = mslrData[rot^1] + (unit*UNIT_SAMPLES+PRED_SAMPLES);
             uint64_t best_enc_err = UINT64_MAX;
             EncHistory xhist_best,yhist_best;
             for (uint enc=0;enc<=3;enc++) {
@@ -146,7 +169,7 @@ void heptafon::EncoderState::encodeSector(PackedSector &sector, const int16_pair
                     if ((settings.predmask>>pred)&1) continue;
 
                     for (uint i=0;i<16;i+=2) {
-                        err += quantizePair(workhist,settings,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,unitbuf_y+i,&workdat[i]);
+                        err += quantizePair(workhist,settings,pred,encmodeYbits[enc],enc==ENCMODE_YSUB,scale,unitdecorr_y+i,unitbuf_y+i,&workdat[i]);
                         if (err >= best_y_err) goto exceed_y_err; // Continue outer
                     }
 
@@ -172,11 +195,11 @@ void heptafon::EncoderState::encodeSector(PackedSector &sector, const int16_pair
                     if (scale2 < 0 || scale2 > 15) continue;
 
                     for (uint i=0;i<8;i+=2) {
-                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,unitbuf_x+i,&workdat[i]);
+                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale1,unitdecorr_x+i,unitbuf_x+i,&workdat[i]);
                         if (err >= best_x_err) goto exceed_x_err; // Continue outer
                     }
                     for (uint i=8;i<16;i+=2) {
-                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,unitbuf_x+i,&workdat[i]);
+                        err += quantizePair(workhist,settings,pred,encmodeXbits[enc],enc==ENCMODE_XSUB,scale2,unitdecorr_x+i,unitbuf_x+i,&workdat[i]);
                         if (err >= best_x_err) goto exceed_x_err; // Continue outer
                     }
 
@@ -237,6 +260,7 @@ void heptafon::EncoderState::encodeSector(PackedSector &sector, const int16_pair
             }
             xhist = xhist_best;
             yhist = yhist_best;
+            unitbuf_x += UNIT_SAMPLES, unitbuf_y += UNIT_SAMPLES, unitdecorr_x += UNIT_SAMPLES, unitdecorr_y += UNIT_SAMPLES;
         }
 
         decodeSector(workSector,compareBuffer);
