@@ -73,9 +73,15 @@ int main(int argc, char **argv) {
                 settings.rotmask = val;
             } else if(!strcmp(argv[i],"-noise-shape")) {
                 if (++i >= argc) usageAndExit();
-                uint val = atoi(argv[i]);
-                if (val >= 256) usageAndExit();
-                settings.ns_strength = val;
+                int val = atoi(argv[i]);
+                if (val >= 256 || val <= -256) usageAndExit();
+                if (val < 0) {
+                    settings.ns_strength = -val;
+                    settings.dynamic_shaping = false;
+                } else {
+                    settings.ns_strength = val;
+                    settings.dynamic_shaping = true;
+                }
             } else if (argv[i][0] == '-') {
                 usageAndExit();
             } else {
@@ -98,6 +104,7 @@ int main(int argc, char **argv) {
             std::cout << "Output open error: " << strerror(errno) << std::endl;
             return -1;
         }
+        EncoderState encstate(settings);
         for(;;) {
             PackedSector sectors[ENC_JOB_SIZE];
             int16_pair buffer[SECTOR_SAMPLES*ENC_JOB_SIZE];
@@ -109,7 +116,7 @@ int main(int argc, char **argv) {
             
             for (uint i=0;i<ENC_JOB_SIZE;i++) {
                 if (i>=gotsectors) continue;
-                encodeSector(sectors[i],buffer+(i*SECTOR_SAMPLES),settings);
+                encstate.encodeSector(sectors[i],buffer+(i*SECTOR_SAMPLES));
             }
             fwrite(sectors,sizeof(PackedSector),gotsectors,outfile);
         }

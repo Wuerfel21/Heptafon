@@ -96,19 +96,30 @@ struct History {
     }
 };
 
+// decode functions (heptadec.cpp)
+void decodeSector(const PackedSector &sector, int16_pair *buffer);
+
+// encoder stuff (heptaenc.cpp)
 struct EncoderSettings {
     uint8_t ns_strength; // noise shaping strength 0..255
     uint8_t encmask; // 4 bits. Do not set 15
     uint8_t predmask; // 4 bits. Do not set 15;
     uint8_t rotmask; // 4 bits. Do not set 15;
+    bool dynamic_shaping;
 };
 
+struct EncoderState {
+    EncoderSettings settings;
+    int32_t prev_decorr_weight[4] = {768,768,768,768}; // For mid/side/left/right
+    int16_t prev_smps[4][2] = {}; // For mid/side/left/right, unencoded
+    int32_pair prev_error = {};
+    int32_pair prev_histsmp = {};
+    uint8_t prevblock_rotation = ROTMODE_LEFT;
 
-// decode functions (heptadec.cpp)
-void decodeSector(const PackedSector &sector, int16_pair *buffer);
+    void encodeSector(PackedSector &sector, const int16_pair *buffer);
+    EncoderState(EncoderSettings settings) : settings(settings) {};
+};
 
-// encode functions (heptaenc.cpp)
-void encodeSector(PackedSector &sector, const int16_pair *buffer, const EncoderSettings &settings);
 
 // inline functions
 
@@ -187,7 +198,7 @@ constexpr uint encmodeYbits[4] = {
 
 
 // Statistics stuff (hepstats.cpp)
-class Statistics {
+struct Statistics {
     uint rots[4];
     uint enc_by_rot[4][4];
     uint xpred_by_enc[4][4];
@@ -198,7 +209,7 @@ class Statistics {
     uint xscale_msb[24];
     uint yscale_msb[24];
     uint seccnt,ucount;
-public:
+
     void accumulateStats(const PackedSector &sector);
     void printStats();
 };
