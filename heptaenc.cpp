@@ -16,7 +16,7 @@ struct EncHistory : public History {
         int32_t shape_value;
         if (settings.dynamic_shaping) {
             int32_t shaping_weight = (decorr_weight < 256) ? 1024 : 1536 - decorr_weight*2;
-            shape_value = -((((shaping_weight * error)>>10)*settings.ns_strength)/256);
+            shape_value = -((shaping_weight * error)>>10);
 
             if (shaping_weight < 0 && shape_value) {
                 // Shape noise downwards

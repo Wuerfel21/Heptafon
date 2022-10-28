@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
             fwrite(buffer,SECTOR_SAMPLES*sizeof(int16_pair),1,outfile);
         }
     } else if (!strcmp(argv[1],"encode")) {
-        EncoderSettings settings = {};
+        EncoderSettings settings = {.dynamic_shaping = true};
 
         uint files_got = 0;
         constexpr uint files_need = 2;
@@ -74,13 +74,13 @@ int main(int argc, char **argv) {
             } else if(!strcmp(argv[i],"-noise-shape")) {
                 if (++i >= argc) usageAndExit();
                 int val = atoi(argv[i]);
-                if (val >= 256 || val <= -256) usageAndExit();
-                if (val < 0) {
-                    settings.ns_strength = -val;
-                    settings.dynamic_shaping = false;
+                if (val >= 256 || val < -1) usageAndExit();
+                if (val == -1) {
+                    settings.ns_strength = 0; // goes unused
+                    settings.dynamic_shaping = true;
                 } else {
                     settings.ns_strength = val;
-                    settings.dynamic_shaping = true;
+                    settings.dynamic_shaping = false;
                 }
             } else if (argv[i][0] == '-') {
                 usageAndExit();
