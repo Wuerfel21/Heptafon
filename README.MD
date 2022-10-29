@@ -14,6 +14,7 @@ The basic concept of coding a "main" and "sub" channel remians, but they are now
 Usage info:
  - Use `build.sh` to build `heptafon.exe`
  - Use `heptafon encode input.raw output.hep` to encode a raw file into heptafon format
+   - By default, dynamic noise shaping is enabled. Specify `-noise-shape 0` to disable it, `-noise-shape 192` (or other integer 1..255) to enable static noise shaping with a given strength or `-noise-shape -1` to explicity enable dynamic shaping
  - Use `heptafon decode input.hep output.raw` to decode again
 
 As said, all I/O is with raw files, 16 bit, little endian, stereo. The codec is sample rate agnostic, but the intended rate is 32.0 kHz.
