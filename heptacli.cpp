@@ -8,7 +8,7 @@ using namespace heptafon;
 
 static void printUsage() {
     std::cout << "Usage:" << std::endl;
-    std::cout << "  encode [in.raw] [out.hep] (-noise-shape 0..255)" << std::endl;
+    std::cout << "  encode [in.raw] [out.hep] (-noise-shape -1..255)" << std::endl;
     std::cout << "  decode [in.hep] [out.raw]" << std::endl;
     std::cout << "  stats [in.hep]" << std::endl;
     std::cout << "  rawdiff [a.raw] [b.raw]" << std::endl;
