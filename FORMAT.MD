@@ -42,7 +42,7 @@ The one byte at $014 contains parameters applying to the entire sector. Only the
 |Bits   ||
 |------:|-|
 |0..1   |Rotation matrixing mode|
-|2..15  |Reserved, set to zero|
+|2..7   |Reserved, set to zero|
 
 The _Rotation matrixing mode_ decides how the encoded "X" and "Y" channels map to the left and right output channels.
 
