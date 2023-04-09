@@ -173,7 +173,13 @@ This applies to all samples, except those that are stored in half-rate mode:
 
 Half-rate samples go through the same process, but only for odd-numbered samples. All even samples are the linear average of the previous history sample and the following odd sample.
 
+## Notes
 
+### Recommended sample rate
+
+Heptafon is designed for 32000 samples per second.
+
+At this sampling rate, each Sector contains ~17.6 milliseconds of audio, which allows for efficient buffer polling in systems timed around NTSC video fields, never requiring the reading of more than one Sector per field and always leaving at least 1 millisecond of slack per field for double buffer replenishment.
 
 
 
