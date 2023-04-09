@@ -6,14 +6,14 @@ CON
   spiDI     = 20
   spiCS     = 25
 
-  audioLeft = 24+6 
+  audioLeft = 24+6
   audioRight= 24+7
 
   vgaBase =  32
   vgaVsync = vgaBase + 4
-  
+
   volume = 0.18
-  
+
 
 OBJ
 c: "libc"
@@ -28,7 +28,7 @@ long rottotal[4]
 byte buffer[1024]
 
 PUB main | rptr,tmp
-              
+
 sector_ack := -1
 if vgaBase >= 0
   text.initVga(-1,vgaBase,vgaVsync,0,text.VGA)
@@ -45,15 +45,15 @@ filehandle := c.fopen(@"/sd/suwa.hep",@"rb")
 
 repeat
   if sector_ack <> sector_rq
-    rptr := @buffer+(sector_rq&1)<<9 
+    rptr := @buffer+(sector_rq&1)<<9
     ifnot c.fread(rptr,512,1,filehandle)
       text.printStr(string("EOF",13))
       return
     sector_ack := sector_rq
     if vgaBase >= 0
-      text.home()    
-      text.nl()   
-      infoPrint(string("SECTOR"),sector_ack,false)                 
+      text.home()
+      text.nl()
+      infoPrint(string("SECTOR"),sector_ack,false)
       tmp := byte[rptr][20]&3
       rottotal[tmp]++
       infoPrint(string("MID"),rottotal[0],tmp==0)
@@ -66,7 +66,7 @@ PRI infoPrint(label,number,highlight)
 text.setTextColours($F,highlight?$4:$1)
 
 text.printStr(label)
-text.tx(9) 
+text.tx(9)
 text.tx(":")
 text.dec(number)
 
@@ -76,7 +76,7 @@ text.nl()
 PRI decoderStart(left,right) | divider
 
 divider := clkfreq/32_000
-sectorRqPtr := @sector_rq    
+sectorRqPtr := @sector_rq
 sectorAckPtr := @sector_ack
 musicBufPtr := @buffer
 
@@ -110,10 +110,10 @@ entry
               drvl left_pinf
               drvl right_pinf
 
-              mov sectorLeft,sectorLength 
-loop                                     
+              mov sectorLeft,sectorLength
+loop
               cmp sectorLeft,initThreshold wc
-        if_b  jmp #.doDecode 
+        if_b  jmp #.doDecode
               cmp sectorLeft,sectorLength wz
         if_nz jmp #.no_ptrinit
               ' Check for ACK
@@ -130,9 +130,9 @@ loop
               add sectorNext,#1
               wrlong sectorNext,sectorRqPtr
               ' Get sector parameter
-              add uParPtr,#PRED_SAMPLES*4    
-              rdword sectorPar,uParPtr   
-              sub uParPtr,#PRED_SAMPLES*4              
+              add uParPtr,#PRED_SAMPLES*4
+              rdword sectorPar,uParPtr
+              sub uParPtr,#PRED_SAMPLES*4
 .no_ptrinit
               rdlong musicOutX,uParPtr
               add uParPtr,#4
@@ -142,7 +142,7 @@ loop
               call #pushHistX
               call #pushHistY
 
-              cmp sectorLeft,initThreshold wz         
+              cmp sectorLeft,initThreshold wz
         if_z  add uParPtr,#2
         if_z  mov uDatPtr,uParPtr
         if_z  add uDatPtr,#SECTOR_UNITS*2
@@ -150,13 +150,13 @@ loop
 
 .doDecode
               test sectorLeft,#15 wz
-        if_nz jmp #.no_unitinit      
+        if_nz jmp #.no_unitinit
               rdlong slowData,uDatPtr
-              add uDatPtr,#4  
+              add uDatPtr,#4
               rdword unitPar,uParPtr
               add uParPtr,#2
               mov scaleX,unitPar
-              and scaleX,#15   
+              and scaleX,#15
               mov scaleY,unitPar
               shr scaleY,#4
               and scaleY,#15
@@ -167,99 +167,99 @@ loop
         if_z  add uDatPtr,#4
               test sectorLeft,#8 wc
   if_c_and_z  mov tempValue1,unitPar
-  if_c_and_z  shr tempValue1,#6  
-  if_c_and_z  sub tempValue1,#2 
+  if_c_and_z  shr tempValue1,#6
+  if_c_and_z  sub tempValue1,#2
   if_c_and_z  add scaleX,tempValue1
 
               ' Generate predictions (unrolled because brrr)
-              mov musicOutX,histX0    
+              mov musicOutX,histX0
               test unitPar,#%0011 wcz
-        if_nz sumc musicOutX,histX1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
-              test unitPar,#%0010 wz 
+        if_nz sumc musicOutX,histX1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED
+              test unitPar,#%0010 wz
   if_c_and_nz shl musicOutX,#1 ' QUADRATIC
    if_c_or_nz add musicOutX,histX0 ' LINEAR, QUADRATIC or WEIGHTED
   if_c_and_nz sub musicOutX,histX1 ' QUADRATIC
-        if_nz add musicOutX,histX2 ' QUADRATIC or WEIGHTED 
+        if_nz add musicOutX,histX2 ' QUADRATIC or WEIGHTED
  if_nc_and_nz sar musicOutX,#2 ' WEIGHTED
 
-              mov musicOutY,histY0       
+              mov musicOutY,histY0
               test unitPar,#%1100 wcz
-        if_nz sumc musicOutY,histY1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
-              test unitPar,#%1000 wz 
+        if_nz sumc musicOutY,histY1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED
+              test unitPar,#%1000 wz
   if_c_and_nz shl musicOutY,#1 ' QUADRATIC
    if_c_or_nz add musicOutY,histY0 ' LINEAR, QUADRATIC or WEIGHTED
   if_c_and_nz sub musicOutY,histY1 ' QUADRATIC
-        if_nz add musicOutY,histY2 ' QUADRATIC or WEIGHTED 
- if_nc_and_nz sar musicOutY,#2 ' WEIGHTED                                      
-              
-  
+        if_nz add musicOutY,histY2 ' QUADRATIC or WEIGHTED
+ if_nc_and_nz sar musicOutY,#2 ' WEIGHTED
+
+
               test unitPar,#%01_0000 wz ' Pre-get lower bit of mode
               test unitPar,#%10_0000 wc
         if_c  jmp #.subsampleMode
-            
+
               '  Z -> 6bit, NZ -> 3bit
               mov tempValue1,fastData
               shl fastData,#2
               shl slowData,#1 wc
-        if_z  rcr tempValue1,#32-4 
-        if_nz rcr tempValue1,#32-2   
-              mov tempValue2,fastData  
-              shl fastData,#2  
+        if_z  rcr tempValue1,#32-4
+        if_nz rcr tempValue1,#32-2
+              mov tempValue2,fastData
+              shl fastData,#2
               shl slowData,#1 wc
               rcr tempValue2,#32-2
-        if_z  muxc tempValue1,#16 
+        if_z  muxc tempValue1,#16
 
-              ' X delta now in tempValue1, Y delta in tempValue2      
+              ' X delta now in tempValue1, Y delta in tempValue2
               shl tempValue1,scaleX
-              cmps histX0,#0 wc        
-              sumc musicOutX,tempValue1                     
-              shl tempValue2,scaleY     
-              cmps histY0,#0 wc        
-        if_nz sumc musicOutY,tempValue2              
+              cmps histX0,#0 wc
+              sumc musicOutX,tempValue1
+              shl tempValue2,scaleY
+              cmps histY0,#0 wc
+        if_nz sumc musicOutY,tempValue2
               push #.sampleDone
               push #pushHistY
               jmp #pushHistX
 
 
-.subsampleMode                                                                                       
+.subsampleMode
               ' Z -> Y subsampled, NZ -> X subsampled
-        if_z  mov tempValue1,fastData  
-        if_nz mov tempValue2,fastData     
-        if_z  mov tempValue2,slowData 
+        if_z  mov tempValue1,fastData
+        if_nz mov tempValue2,fastData
+        if_z  mov tempValue2,slowData
         if_nz mov tempValue1,slowData
-                                      
+
               sar tempValue1,#32-4
               sar tempValue2,#32-4
-                                          
-              ' X delta now in tempValue1, Y delta in tempValue2    
+
+              ' X delta now in tempValue1, Y delta in tempValue2
               shl tempValue1,scaleX
-              cmps histX0,#0 wc        
-              sumc musicOutX,tempValue1                     
-              shl tempValue2,scaleY     
-              cmps histY0,#0 wc        
+              cmps histX0,#0 wc
+              sumc musicOutX,tempValue1
+              shl tempValue2,scaleY
+              cmps histY0,#0 wc
               sumc musicOutY,tempValue2
-                                                                                                       
-              test sectorLeft,#1 wc ' set C for odd samples    
-              shl fastData,#4 
+
+              test sectorLeft,#1 wc ' set C for odd samples
+              shl fastData,#4
         if_c  shl slowData,#4
    if_c_or_z  call #pushHistX
-   if_c_or_nz call #pushHistY     
+   if_c_or_nz call #pushHistY
  if_nc_and_z  add musicOutY,histY0
- if_nc_and_z  sar musicOutY,#1   
+ if_nc_and_z  sar musicOutY,#1
  if_nc_and_nz add musicOutX,histX0
- if_nc_and_nz sar musicOutX,#1    
-              
+ if_nc_and_nz sar musicOutX,#1
+
 
 .sampleDone
               ' advance sectorLeft
               sub sectorLeft,#1 wz
-        if_z  mov sectorLeft,sectorLength 
-        if_z  mov sectorCurrent,sectorNext 
+        if_z  mov sectorLeft,sectorLength
+        if_z  mov sectorCurrent,sectorNext
 
 
 .doOutput
               ' Swap XY if need be
-              testb sectorPar,#0 wc 
+              testb sectorPar,#0 wc
         if_c  xor musicOutX,musicOutY
         if_c  xor musicOutY,musicOutX
         if_c  xor musicOutX,musicOutY
@@ -269,17 +269,17 @@ loop
         if_nc add musicOutL,musicOutY
               negnc musicOutR,musicOutY
         if_nc add musicOutR,musicOutX
-              ' clamp decoded values      
+              ' clamp decoded values
               fges musicOutL,clampMin
               fles musicOutL,clampMax
               fges musicOutR,clampMin
-              fles musicOutR,clampMax 
+              fles musicOutR,clampMax
 
-              ' do output             
+              ' do output
               mov tempValue1,dacCenter
               mov tempValue2,dacCenter
               scas musicOutL,dacScale
-              add tempValue1,0-0      
+              add tempValue1,0-0
               scas musicOutR,dacScale
               add tempValue2,0-0
 
@@ -290,18 +290,18 @@ loop
 
               jmp #loop
 
-pushHistX                      
+pushHistX
               mov histX2,histX1
               mov histX1,histX0
         _ret_ mov histX0,musicOutX
 
-pushHistY                      
+pushHistY
               mov histY2,histY1
               mov histY1,histY0
-        _ret_ mov histY0,musicOutY   
-              
+        _ret_ mov histY0,musicOutY
 
-bit31         long |<31       
+
+bit31         long |<31
 bit9          long |<9
 clampMin      long -$7FFF
 clampMax      long  $7FFF
@@ -318,12 +318,12 @@ sectorAckPtr  long 0
 musicBufPtr   long 0
 tempValue1    long 0
 tempValue2    long 0
-tempValue3    long 0   
-tempValue4    long 0  
+tempValue3    long 0
+tempValue4    long 0
 left_pinf     long 0
 right_pinf    long 0
-musicOutX     long 0 
-musicOutY     long 0  
+musicOutX     long 0
+musicOutY     long 0
 
 sectorPar     res 1
 unitPar       res 1
@@ -331,10 +331,10 @@ sectorLeft    res 1
 uparPtr       res 1
 udatPtr       res 1
 slowData      res 1
-fastData      res 1   
+fastData      res 1
 
 scaleX        res 1
-scaleY        res 1     
+scaleY        res 1
 musicOutL     res 1
 musicOutR     res 1
 
@@ -346,4 +346,3 @@ histY1        res 1
 histY2        res 1
 
               fit 496
- 
