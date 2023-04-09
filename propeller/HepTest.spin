@@ -175,10 +175,9 @@ loop
               test unitPar,#%0011 wc,wz
         if_nz sumc musicOutX,histX1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
               test unitPar,#%0010 wz 
-    if_z_eq_c add musicOutX,histX0 ' LINEAR or WEIGHTED
-              mov tempValue2,musicOutX
-              add tempValue2,musicOutX
-  if_c_and_nz add musicOutX,tempValue2 ' QUADRATIC
+  if_c_and_nz shl musicOutX,#1 ' QUADRATIC
+   if_c_or_nz add musicOutX,histX0 ' LINEAR, QUADRATIC or WEIGHTED
+  if_c_and_nz sub musicOutX,histX1 ' QUADRATIC
         if_nz add musicOutX,histX2 ' QUADRATIC or WEIGHTED 
  if_nc_and_nz sar musicOutX,#2 ' WEIGHTED
 
@@ -186,10 +185,9 @@ loop
               test unitPar,#%1100 wc,wz
         if_nz sumc musicOutY,histY1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
               test unitPar,#%1000 wz 
-    if_z_eq_c add musicOutY,histY0 ' LINEAR or WEIGHTED
-              mov tempValue2,musicOutY
-              add tempValue2,musicOutY
-  if_c_and_nz add musicOutY,tempValue2 ' QUADRATIC
+  if_c_and_nz shl musicOutY,#1 ' QUADRATIC
+   if_c_or_nz add musicOutY,histY0 ' LINEAR, QUADRATIC or WEIGHTED
+  if_c_and_nz sub musicOutY,histY1 ' QUADRATIC
         if_nz add musicOutY,histY2 ' QUADRATIC or WEIGHTED 
  if_nc_and_nz sar musicOutY,#2 ' WEIGHTED                                      
               
