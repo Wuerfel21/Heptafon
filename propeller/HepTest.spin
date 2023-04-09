@@ -172,11 +172,10 @@ loop
 
               ' Generate predictions (unrolled because brrr)
               mov musicOutX,histX0    
-              test unitPar,#%0001 wz         
-        if_nz add musicOutX,musicOutX ' LINEAR or WEIGHTED
               test unitPar,#%0011 wc,wz
         if_nz sumc musicOutX,histX1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
               test unitPar,#%0010 wz 
+    if_z_eq_c add musicOutX,histX0 ' LINEAR or WEIGHTED
               mov tempValue2,musicOutX
               add tempValue2,musicOutX
   if_c_and_nz add musicOutX,tempValue2 ' QUADRATIC
@@ -184,11 +183,10 @@ loop
  if_nc_and_nz sar musicOutX,#2 ' WEIGHTED
 
               mov musicOutY,histY0    
-              test unitPar,#%0100 wz         
-        if_nz add musicOutY,musicOutY ' LINEAR or WEIGHTED
               test unitPar,#%1100 wc,wz
         if_nz sumc musicOutY,histY1 ' sub for LINEAR or QUADRATIC, add for WEIGHTED   
               test unitPar,#%1000 wz 
+    if_z_eq_c add musicOutY,histY0 ' LINEAR or WEIGHTED
               mov tempValue2,musicOutY
               add tempValue2,musicOutY
   if_c_and_nz add musicOutY,tempValue2 ' QUADRATIC
@@ -196,10 +194,11 @@ loop
  if_nc_and_nz sar musicOutY,#2 ' WEIGHTED                                      
               
   
-              test unitPar,#%10_0000 wz
+              test unitPar,#%01_0000 wz ' Pre-get lower bit of mode
+              test unitPar,#%10_0000 wc
         if_nz jmp #:subsampleMode
         
-              test unitPar,#%1_0000 wz '  Z -> 6bit, NZ -> 3bit
+              '  Z -> 6bit, NZ -> 3bit
               mov tempValue1,fastData
               shl fastData,#2
               shl slowData,#1 wc
@@ -224,9 +223,8 @@ loop
               jmp #:sampleDone
 
 
-:subsampleMode                                                
-                                       
-              test unitPar,#%1_0000 wz ' Z -> Y subsampled, NZ -> X subsampled
+:subsampleMode                  
+              ' Z -> Y subsampled, NZ -> X subsampled
         if_z  mov tempValue1,fastData  
         if_nz mov tempValue2,fastData     
         if_z  mov tempValue2,slowData 
