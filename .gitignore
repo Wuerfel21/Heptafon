@@ -1,3 +1,6 @@
 sample/*
 test/*
 *.exe
+*.pasm
+*.p2asm
+*.binary
