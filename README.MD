@@ -26,3 +26,5 @@ As said, all I/O is with raw files, 16 bit, little endian, stereo. The codec is 
 The Spin/PASM code in the "propeller" directory is an optimized example decoder for Parallax Propeller 1.
 
 A not-quite-as-optimized Propeller 2 port exists in the "propeller2" directory.
+
+Their memory footprint could be further reduced by aliasing variables and re-using the init code area, but this has not been done for readability reasons.

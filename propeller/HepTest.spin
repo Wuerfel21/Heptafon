@@ -138,14 +138,12 @@ loop
               shl musicOutX,#16
               sar musicOutX,#16
               sar musicOutY,#16
-              call #pushHistX
-              call #pushHistY
 
               cmp sectorLeft,initThreshold wz
         if_z  add uParPtr,#2
         if_z  mov uDatPtr,uParPtr
         if_z  add uDatPtr,#SECTOR_UNITS*2
-              jmp #:sampleDone
+              jmp #:pushHists
 
 :doDecode
               test sectorLeft,#15 wz
@@ -215,8 +213,14 @@ loop
               shl tempValue2,scaleY
               cmps histY0,#0 wc
         if_nz sumc musicOutY,tempValue2
-              call #pushHistX
-              call #pushHistY
+:pushHists
+              ' Push Histories
+              mov histX2,histX1
+              mov histX1,histX0
+              mov histX0,musicOutX
+              mov histY2,histY1
+              mov histY1,histY0
+              mov histY0,musicOutY
 
               jmp #:sampleDone
 
@@ -242,8 +246,14 @@ loop
               test sectorLeft,#1 wc ' set C for odd samples
               shl fastData,#4
         if_c  shl slowData,#4
-   if_c_or_z  call #pushHistX
-   if_c_or_nz call #pushHistY
+              ' If not interpolating, push history
+   if_c_or_z  mov histX2,histX1
+   if_c_or_z  mov histX1,histX0
+   if_c_or_z  mov histX0,musicOutX
+   if_c_or_nz mov histY2,histY1
+   if_c_or_nz mov histY1,histY0
+   if_c_or_nz mov histY0,musicOutY
+              ' Interpolate
  if_nc_and_z  add musicOutY,histY0
  if_nc_and_z  sar musicOutY,#1
  if_nc_and_nz add musicOutX,histX0
@@ -258,17 +268,15 @@ loop
 
 
 :doOutput
-              ' Swap XY if need be
-              test sectorPar,#|<0 wc
-        if_c  xor musicOutX,musicOutY
-        if_c  xor musicOutY,musicOutX
-        if_c  xor musicOutX,musicOutY
-              ' Convert mid/side to left/right
-              test sectorPar,#|<1 wc
-              mov musicOutL,musicOutX
-        if_nc add musicOutL,musicOutY
-              negnc musicOutR,musicOutY
-        if_nc add musicOutR,musicOutX
+              ' Undo encoder matrixing
+              test sectorPar,#%10 wz
+              test sectorPar,#%11 wc
+              mov musicOutL,#0
+              mov musicOutR,#0
+    if_z_or_c add musicOutL,musicOutX ' MID,SIDE,LEFT
+   if_z_or_nc add musicOutL,musicOutY ' MID,SIDE,RIGHT
+   if_z_or_nc sumc musicOutR,musicOutX ' MID,SIDE,RIGHT
+    if_z_or_c sumnc musicOutR,musicOutY ' MID,SIDE,LEFT
               ' clamp decoded values
               mins musicOutL,clampMin
               maxs musicOutL,clampMax
@@ -288,20 +296,6 @@ loop
               mov frqb,tempValue2
               jmp #loop
 
-pushHistX
-              mov histX2,histX1
-              mov histX1,histX0
-              mov histX0,musicOutX
-pushHistX_ret
-              ret
-
-pushHistY
-              mov histY2,histY1
-              mov histY1,histY0
-              mov histY0,musicOutY
-pushHistY_ret
-              ret
-
 
 bit31         long |<31
 bit9          long |<9
@@ -319,9 +313,9 @@ musicBufPtr   long 0
 tempValue1    long 0
 tempValue2    long 0
 tempValue3    long 0
-tempValue4    long 0
-musicOutX     long 0
-musicOutY     long 0
+
+musicOutX     res 1
+musicOutY     res 1
 
 sectorPar     res 1
 unitPar       res 1

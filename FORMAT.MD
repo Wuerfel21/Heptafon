@@ -156,7 +156,7 @@ The first three samples in a Sector are stored uncompressed and are used as foll
  - sign-extend stored sample from 16 to 32 bits
  - push onto history buffer
  - matrix with other channel (see above)
- - clamp output to 16 bit range
+ - clamp output to 16 bit range (optional)
 
 ### Decoding a compressed sample
 
@@ -169,7 +169,7 @@ This applies to all samples, except those that are stored in half-rate mode:
  - compute predictor value and add to sample
  - push onto history buffer
  - matrix with other channel (see above)
- - clamp output to 16 bit range
+ - clamp output to 16 bit range (optional)
 
 Half-rate samples go through the same process, but only for odd-numbered samples. All even samples are the linear average of the previous history sample and the following odd sample.
 
@@ -181,5 +181,11 @@ Heptafon is designed for 32000 samples per second.
 
 At this sampling rate, each Sector contains ~17.6 milliseconds of audio, which allows for efficient buffer polling in systems timed around NTSC video fields, never requiring the reading of more than one Sector per field and always leaving at least 1 millisecond of slack per field for double buffer replenishment.
 
+### On clamping
 
+When decoding a Heptafon stream standalone (for example, into a raw PCM file), clamping to the 16 bit range should be applied (either -32768..32767 or -32767..32767). When the Heptafon stream is mixed with other audio sources, clamping may be applied on the whole mix instead. Thus, values far outside the 16 bit range should not be encoded.
+
+### On half-rate inbetween samples
+
+Since the interpolated samples generated in half-rate modes do not influence the decoder state in any way, the method and precision used to generate them is not critical. The recommended method is to sum the previous and next sample and to arithmetically right-shift the result by one bit.
 
