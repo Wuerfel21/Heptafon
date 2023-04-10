@@ -139,11 +139,11 @@ loop
               sar musicOutX,#16
               sar musicOutY,#16
 
-              cmp sectorLeft,initThreshold wz
+              cmpsub sectorLeft,initThreshold wc,wz,nr ' Always set C
         if_z  add uParPtr,#2
         if_z  mov uDatPtr,uParPtr
         if_z  add uDatPtr,#SECTOR_UNITS*2
-              jmp #:pushHists
+              jmp #:pushHistsC
 
 :doDecode
               test sectorLeft,#15 wz
@@ -207,19 +207,16 @@ loop
         if_z  muxc tempValue1,#16
 
               ' X delta now in tempValue1, Y delta in tempValue2
-              shl tempValue1,scaleX
-              cmps histX0,#0 wc
-              sumc musicOutX,tempValue1
-              shl tempValue2,scaleY
-              cmps histY0,#0 wc
-        if_nz sumc musicOutY,tempValue2
-:pushHists
-              ' Push Histories
               mov histX2,histX1
-              mov histX1,histX0
+              mov histX1,histX0 wc
+              shl tempValue1,scaleX
+              sumc musicOutX,tempValue1
               mov histX0,musicOutX
+
               mov histY2,histY1
-              mov histY1,histY0
+              mov histY1,histY0 wc
+              shl tempValue2,scaleY
+        if_nz sumc musicOutY,tempValue2
               mov histY0,musicOutY
 
               jmp #:sampleDone
@@ -247,6 +244,7 @@ loop
               shl fastData,#4
         if_c  shl slowData,#4
               ' If not interpolating, push history
+:pushHistsC
    if_c_or_z  mov histX2,histX1
    if_c_or_z  mov histX1,histX0
    if_c_or_z  mov histX0,musicOutX
