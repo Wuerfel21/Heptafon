@@ -27,7 +27,7 @@ long rottotal[4]
 
 byte buffer[1024]
 
-PUB main | rptr,tmp
+PUB main | i,rptr,tmp,sxmin,sxmax,symin,symax
 
 sector_ack := -1
 if vgaBase >= 0
@@ -35,7 +35,38 @@ if vgaBase >= 0
   text.setTextColours($F,$1)
   text.clear()
 decoderStart(audioLeft,audioRight)
-text.printStr(string("HEPTAFON!",13))
+if vgaBase >= 0
+  text.printStr(@"HEPTAFON!")
+  text.setTextPos(20,0)
+  text.printStr(string("BitAlloc Modes: Predictors:     ",10))
+  text.setTextColours($F,$5)
+  text.printStr(@"6-Bit (mono)    ")
+  text.setTextColours($F,$0)
+  text.printStr(@"Hold            ")
+  text.setTextColours($F,$1)
+  text.nl()
+  text.setTextColours($F,$0)
+  text.printStr(@"3-Bit (stereo)  ")
+  text.setTextColours($F,$2)
+  text.printStr(@"Linear          ")
+  text.setTextColours($F,$1)
+  text.nl()
+  text.setTextColours($F,$4)
+  text.printStr(@"Y Subsampled    ")
+  text.setTextColours($F,$4)
+  text.printStr(@"Quadratic       ")
+  text.setTextColours($F,$1)
+  text.nl()
+  text.setTextColours($F,$6)
+  text.printStr(@"X Subsampled    ")
+  text.setTextColours($F,$8)
+  text.printStr(@"Weighted        ")
+  text.setTextColours($F,$1)
+  text.nl()
+
+
+
+
 
 'fat.readData(@buffer,1024)
 'tv.hex(long[@buffer+$68],8)
@@ -51,8 +82,7 @@ repeat
       return
     sector_ack := sector_rq
     if vgaBase >= 0
-      text.home()
-      text.nl()
+      text.setTextPos(1,0)
       infoPrint(string("SECTOR"),sector_ack,false)
       tmp := byte[rptr][20]&3
       rottotal[tmp]++
@@ -60,6 +90,92 @@ repeat
       infoPrint(string("SIDE"),rottotal[1],tmp==1)
       infoPrint(string("LEFT"),rottotal[2],tmp==2)
       infoPrint(string("RIGHT"),rottotal[3],tmp==3)
+
+      text.nl()
+      sxmin := 15
+      sxmax := 0
+      symin := 15
+      symax := 0
+      repeat i from 0 to SECTOR_UNITS-1
+        tmp := word[rptr+$16][i]
+        sxmin <#= tmp.[0 addbits 3]
+        sxmax #>= tmp.[0 addbits 3]
+        symin <#= tmp.[4 addbits 3]
+        symax #>= tmp.[4 addbits 3]
+      text.printStr(@"X Scale: ")
+      minmaxPrint(sxmin,sxmax,15,1)
+      text.printStr(@"Y Scale: ")
+      minmaxPrint(symin,symax,15,1)
+
+      text.nl()
+      text.printStr(@"Unit details: ")
+      text.nl()
+      text.printStr(@"Bit Mode: ")
+      repeat i from 0 to SECTOR_UNITS-1
+        case word[rptr+$16][i].[12 addbits 1]
+          0: 
+            text.setTextColours($F,$5)
+            text.tx("6")
+          1: 
+            text.setTextColours($F,$0)
+            text.tx("3")
+          2: 
+            text.setTextColours($F,$4)
+            text.tx("Y")
+          3: 
+            text.setTextColours($F,$6)
+            text.tx("X")
+      text.setTextColours($F,$1)   
+      text.nl() 
+      text.printStr(@"X Pred. : ")
+      repeat i from 0 to SECTOR_UNITS-1
+        case word[rptr+$16][i].[8 addbits 1]
+          0: 
+            text.setTextColours($F,$0)
+            text.tx("H")
+          1: 
+            text.setTextColours($F,$2)
+            text.tx("L")
+          2: 
+            text.setTextColours($F,$4)
+            text.tx("Q")
+          3: 
+            text.setTextColours($F,$8)
+            text.tx("W")
+      text.setTextColours($F,$1)   
+      text.nl() 
+      text.printStr(@"Y Pred. : ")
+      repeat i from 0 to SECTOR_UNITS-1
+        case word[rptr+$16][i].[10 addbits 1]
+          0: 
+            text.setTextColours($F,$0)
+            text.tx("H")
+          1: 
+            text.setTextColours($F,$2)
+            text.tx("L")
+          2: 
+            text.setTextColours($F,$4)
+            text.tx("Q")
+          3: 
+            text.setTextColours($F,$8)
+            text.tx("W")
+      text.setTextColours($F,$1)   
+      text.nl() 
+      text.printStr(@"X Scale : ")
+      repeat i from 0 to SECTOR_UNITS-1
+        text.hex(word[rptr+$16][i].[0 addbits 3],1)
+      text.nl() 
+      text.printStr(@"Ride    : ")
+      repeat i from 0 to SECTOR_UNITS-1
+        text.hex(word[rptr+$16][i].[14 addbits 1],1)
+      text.nl() 
+      text.printStr(@"Y Scale : ")
+      repeat i from 0 to SECTOR_UNITS-1
+        text.hex(word[rptr+$16][i].[4 addbits 3],1)
+
+
+
+        
 
 
 PRI infoPrint(label,number,highlight)
@@ -72,6 +188,16 @@ text.dec(number)
 
 text.setTextColours($F,$1)
 text.nl()
+
+PRI minmaxPrint(min,max,total,hexdigits) | i
+repeat i from 0 to total
+  text.tx((i >= min and i <= max) ? "X" : "." )
+text.printStr(@" MIN: ")
+text.hex(min,hexdigits)
+text.printStr(@" MAX: ")
+text.hex(max,hexdigits)
+text.nl()
+
 
 PRI decoderStart(left,right) | divider
 
