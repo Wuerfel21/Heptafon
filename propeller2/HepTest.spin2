@@ -341,7 +341,6 @@ loop
               mov histY2,histY1
               mov histY1,histY0 wc
               shl tempValue2,scaleY
-              cmps histY0,#0 wc
         if_nz sumc musicOutY,tempValue2
               mov histY0,musicOutY
 
