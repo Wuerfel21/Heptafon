@@ -5,6 +5,8 @@ This is the preliminary spec for the Heptafon format. The format is defined in t
 
 If in doubt, the reference source code is right and this spec is wrong.
 
+Also, note that this document only applies to the current version of Heptafon. **The format is perhaps not finalized and may yet change in the future.**
+
 ---
 
 A Heptafon stream consists of a series of 512 byte _Sectors_, coding 563 stereo samples each. Each Sector can be decoded independently from its predecessors, allowing for fast seeking and high data error tolerance.
