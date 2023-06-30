@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <utility>
+#include <tuple>
+#include <array>
 #include <algorithm>
 
 namespace heptafon {
