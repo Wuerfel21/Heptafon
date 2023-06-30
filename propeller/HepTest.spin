@@ -192,7 +192,7 @@ loop
 
               test unitPar,#%01_0000 wz ' Pre-get lower bit of mode
               test unitPar,#%10_0000 wc
-        if_nz jmp #:subsampleMode
+        if_c  jmp #:subsampleMode
 
               '  Z -> 6bit, NZ -> 3bit
               mov tempValue1,fastData
